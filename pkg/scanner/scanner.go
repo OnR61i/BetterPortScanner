@@ -1,40 +1,31 @@
-package pkg/scanner
+package scanner
 
 import(
 	"net"
-	"sync.WaitGroup"
+	"sync"
 )
 
 type Scanner struct{
-	targetRange []net.IP
-	portRange []int
+	jobs chan Job
+	results chan Job
+	interruptChan chan bool
+	wg *sync.WaitGroup
 	activeWorkers int
  	strategy Strategy 
-	chan jobs Job
-	chan results Job
-	chan stopChan bool
-	wg *sync.WaitGroup
 	status string
 }
 
-
 func NewScanner(activeWorkers int) Scanner{
 	return Scanner{
-			jobs: 		make(chan, Job),
-			results:	make(chan, Job),
-			stopChan:	make(chan, bool),
-			wg: 		*sync.WaitGroup{},
-			status:		"waiting",
+		jobs: 		make(chan Job),
+		results:	make(chan Job),
+		interruptChan: 	make(chan bool),
+		wg: 		&sync.WaitGroup{},
+		status:		"waiting",
 	}
 }
 
-func (scanner *Scanner) initWorker(workerId int){
-	for(workerId >= scanner.activeWorkers){
-		// Executing request...
-	}
-}
-
-func (scanner *Scanner) startScan(target []net.IP, portRng []int, strategy Strategy) error{
+func (scanner *Scanner) Scan(target []net.IP, portRng []int, strategy Strategy) error{
 	for _, ip := range target{
 		for _, port := range portRng{
 			if scanner.status != "stopping"{
@@ -46,22 +37,41 @@ func (scanner *Scanner) startScan(target []net.IP, portRng []int, strategy Strat
 	}
 }
 
-func (scanner *Scanner) stopScan(){
+func (scanner *Scanner) Interrupt(){
+	for job := range jobs {
+		wg.Done()
+	}
+	scanner.status = "waiting"	
 }
 
-func (scanner *Scanner) resizeWorkerPool(newAmount int){
+func (scanner *Scanner) ResizeWorkerPool(newAmount int){
+	close(scanner.interruptChan)
+	for i := 0; i < newAmount; i++{
+		go initWorker(i)
+	}
+}		
 
-	formerAmount := scanner.activeWorkers
+func (scanner *Scanner) initWorker(workerId int){
+	for(workerId > activeWorkers){
+		select {
+		case interrupt := <- scanner.interruptChan:
+			break	
+		case job := <- scanner.jobs:
+			err := scanner.strategy.execute(&job)
+			if err != nil {
+				continue
+			}
 
-	scanner.activeWorkers = newAmount	
-	
-	// Creation count of workers are their id...	
-	id := formerAmount	
-	for(formerAmount < newAmount){
-		id++
-		go initWorker(id)
+			results <- job
+		}
 	}
 }
+
+
+
+
+	
+
 
 
 

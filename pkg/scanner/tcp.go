@@ -14,16 +14,24 @@ import(
 
 const SRC_PORT = 51190
 
-func Scan(ifindex int, targetIp net.IP, srcIp net.IP, targetPort int, timeOut time.Duration) (bool, error) {
+type TCP struct {
+}
+
+func (tcp *TCP) Scan(targetIp net.IP, srcIp net.IP, targetPort int, intrfc *net.Interface, timeOut time.Duration) (bool, error) {
 	// Scanning target's IP-Address given port for state...
+	ifindex := intrfc.Index
 	// --> Creating Network-Socket, Type: RAW...
-	fd, err := syscall.Socket(syscall.AF_PACKET, syscall.SOCK_RAW, int(syscall.ETH_P_ALL))
+	// --> For this please start this application with root rights...
+	fd, err := syscall.Socket(syscall.AF_PACKET,			//AF_PACKET: Is an interface for link layer connections between applications (or PCs)...
+					syscall.SOCK_RAW,			//SOCK_RAW: Raw sockets are sockets only controlled by the application (kernel does not touch it)...
+					int(syscall.ETH_P_ALL))				//ETH_P_ALL: Socket captures all link layer based packets (not only ip)... 
 	if err != nil {
 		return false, errors.New("Critical Error! Unable to create Network-Socket")
 	}
 
+
 	// --> Preparing essential values...
-	intrfc, err := net.InterfaceByIndex(ifindex)
+	
 	srcMac := intrfc.HardwareAddr
 	dstMac, _, _ := ResolveTargetHwAddr(ifindex, fd, targetIp, srcIp)
 
@@ -142,7 +150,8 @@ func listenForResponse(ifindex int, fd int, srcMac net.HardwareAddr, dstMac net.
 	for {
 		select{
 		case <- stopChan:
-			responseChan <- 2
+			// Probably need a better solution for this...
+			// responseChan <- 2
 			return
 		case packet := <- packetSrc.Packets():
 			// --> Checking whether packet is response...
@@ -167,6 +176,7 @@ func listenForResponse(ifindex int, fd int, srcMac net.HardwareAddr, dstMac net.
 					if(reflect.DeepEqual(tcp.DstPort, srcPort)) {
 						if(reflect.DeepEqual(tcp.SrcPort, dstPort)) {
 							responseChan <- 1
+							break
 						}
 					}
 				}

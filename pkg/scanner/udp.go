@@ -4,8 +4,8 @@ import(
 	"net"
 )
 
-type UDPStrategy struct{
+type UDP struct{
 }
 
-func scan(target net.IP, port int) error{
+func (udp *UDP) Scan(target net.IP, port int) {
 }

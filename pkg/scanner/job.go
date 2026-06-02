@@ -1,33 +1,27 @@
 package pkg/scanner
 
 import(
+	"net"
+	"time"
 )
 
 type Job struct{
-	host net.IP
-	port int
-	state string
+	Target net.IP
+	Port int
+	Strategy Strategy
+	UsedInterface *net.Interface
+	Timeout time.Duration
+	State string
 }
 
-func NewJob(host net.IP, port int) Job{
+func NewJob(target net.IP, port int, strategy Strategy, intrfc *net.Interface, timeout time.Duration) Job{
 	return Job{
-		host: host,
-		port: port,
+		Target:		target,
+		Port:		port,
+		Strategy:	strategy,
+		UsedInterface:	intrfc,
+		Timeout: 	timeout,
+		State:		"undefined",
 	}
 }
 
-func (job *Job) getHost() net.IP{
-	return job.host
-}
-
-func (job *Job) getPort() int{
-	return job.int
-}
-
-func (job *Job) getState() (string, error) {
-	if job.state != nil{
-		return job.state, nil
-	}else{
-		return "", error.New("state has not been initialized yet!")
-	}
-}

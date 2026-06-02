@@ -12,7 +12,7 @@ import(
 	"reflect"
 	"regexp"
 	"time"
-	"log"
+//	"log"
 	"os"
 )
 
@@ -25,10 +25,7 @@ var TIMEOUT_ARP_REQUEST = 3 * time.Second
 func ResolveTargetHwAddr(ifindex int, fd int, targetIp net.IP, srcIp net.IP) (net.HardwareAddr, error, error) {
 	// Try to detect targets MAC-Address with given IP-Address...
 	if mac, err1 := scanARPFile(targetIp); mac == nil {
-		log.Println(err1)
 		if mac, err2 := broadcastARPRequest(ifindex, fd, targetIp, srcIp); mac == nil {
-			log.Println(mac)
-			log.Println(err2)
 			return nil, err1, err2
 		} else {
 			return mac, err1, nil
@@ -73,6 +70,8 @@ func scanARPFile(target net.IP) (net.HardwareAddr, error) {
 	return nil, nil
 }
 
+// Attention: This function only works for forgein mashines. If you broadcast for the sender mashine there will be a difference in answer...
+// To fix it adapt listenForARPResponse to this behavior...
 func broadcastARPRequest(ifindex int, fd int, targetIp net.IP, srcIp net.IP) (net.HardwareAddr, error) {
 	// Resolving targets MAC-Address with ARP-Protocol...
 	// --> Creating ARP-Request...
@@ -91,7 +90,7 @@ func broadcastARPRequest(ifindex int, fd int, targetIp net.IP, srcIp net.IP) (ne
 
 	arp := &layers.ARP{
 		AddrType: 	layers.LinkType(0x01),
-		Protocol: 	layers.EthernetType(0x0800), //EthernetTypeARP EthernetType = 0x0806
+		Protocol: 	layers.EthernetType(0x0800), 	//EthernetTypeARP EthernetType = 0x0806
 		HwAddressSize: 	0x06,
 		ProtAddressSize: 0x04,
 		Operation: 	0x01,
@@ -128,7 +127,7 @@ func broadcastARPRequest(ifindex int, fd int, targetIp net.IP, srcIp net.IP) (ne
 	}
 
 	// --> Save time for Packet Capture Live opening...
-	time.Sleep(time.Second)
+	time.Sleep(2 * time.Second)
 
 	// --> Sending ARP-Request...
 	err = syscall.Sendto(fd, data, 0, addr)
@@ -147,7 +146,6 @@ func broadcastARPRequest(ifindex int, fd int, targetIp net.IP, srcIp net.IP) (ne
 		// --> Checking ARP-Response
 		dstMac := resp
 		if(dstMac != nil){
-			log.Println(dstMac)
 			return dstMac, nil
 		} else {
 			return nil, nil
@@ -197,6 +195,7 @@ func listenForARPResponse(ifindex int, srcMac []byte, srcIp []byte, dstIp []byte
 						if (reflect.DeepEqual(arp.DstProtAddress, srcIp)) {
 							if (reflect.DeepEqual(arp.SourceProtAddress, dstIp)) {
 								responseChan <- net.HardwareAddr(arp.SourceHwAddress)
+								break
 							}
 						}
 					}

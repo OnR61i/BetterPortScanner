@@ -1,19 +1,19 @@
-package pkg/ui
+package ui
 
 import(
 )
 
 type Scan struct{
-	TargetRange []string
+	TargetRange string
 	PortRange string
 	Strategy string
 	NetInterface string
 	Timeout string
 }
 
-func NewScan(target string, portRange string, strategy string, netInterface string, timeout string) {
+func NewScan(target string, portRange string, strategy string, netInterface string, timeout string) Scan {
 	return Scan{
-		Target: 	target,
+		TargetRange: 	target,
 		PortRange: 	portRange,
 		Strategy:	strategy,
 		NetInterface:	netInterface,

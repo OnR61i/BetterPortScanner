@@ -1,11 +1,12 @@
-package pkg/scanner
+package scanner
 
 import(
 	"net"
 	"sync"
 	"time"
 	"errors"
-	//"log"
+	"log"
+
 )
 
 type Scanner struct{
@@ -25,19 +26,25 @@ func (scanner *Scanner) Scan(targetRange []net.IP, ports []int, strategy Strateg
 	jobPool := make(chan Job)
 	outcome := make(chan Job)
 
+	//log.Println(targetRange)
 	// --> starting worker routines...
-	for i := 0; i < scanner.worker; i++ {
-		go initWorker(jobPool, outcome) 
-	}
+	go func() {
+		for i := 0; i < scanner.worker; i++ {
+			go initWorker(jobPool, outcome, wg)
+		}
+	}()
 
 	// --> Filling job pool...
-	for _, ip := range targetRange {
-
-		for _, port := range ports {
-			jobPool <- NewJob(ip, port, strategy, intrfc, timeout)
-			wg.Add(1)
+	go func() {
+		for _, ip := range targetRange {
+			for _, port := range ports {
+				jobPool <- NewJob(ip, port, strategy, intrfc, timeout)
+				wg.Add(1)
+			}
 		}
-	}
+	}()
+
+	time.Sleep(time.Second)
 
 	return outcome, nil
 }
@@ -52,19 +59,23 @@ func (scanner *Scanner) ResizeWorkerPool(newCount int){
 }
 
 // Need better error handling for workers...
-func initWorker(jobPool chan Job, outcome chan Job){
+func initWorker(jobPool chan Job, outcome chan Job, wg *sync.WaitGroup){
 	for job := range jobPool {
 		// --> Getting source ip address...
 		srcIp, err := resolveSrcIp(job.UsedInterface)
 		if err != nil {
+			log.Println("Error1")
 			outcome <- Job{ State : "error" }
+			wg.Done()
 			continue
 		}
 
 		// --> Scanning target...
 		isOpen, err := job.Strategy.Scan(job.Target, srcIp, job.Port, job.UsedInterface, job.Timeout)
 		if err != nil { 
+			log.Println("Error2")
 			outcome <- Job{ State : "error" }
+			wg.Done()
 			continue
 		}
 
@@ -72,10 +83,12 @@ func initWorker(jobPool chan Job, outcome chan Job){
 		if isOpen {
 			job.State = "open"
 			outcome <- job
+			wg.Done()
 		} else {
 			// Has to be specified in the future...
 			job.State = "Not Open"
 			outcome <- job
+			wg.Done()
 		}
 	}
 }

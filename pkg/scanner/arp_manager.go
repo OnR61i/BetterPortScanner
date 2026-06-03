@@ -1,14 +1,15 @@
-package pkg/scanner
+package scanner
 
 import(
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcap"
-	
+
 	"net"
 	"errors"
 	"syscall"
 	"strings"
+	"strconv"
 	"reflect"
 	"regexp"
 	"time"
@@ -20,7 +21,7 @@ const ARP_FILE_PATH = "/proc/net/arp"
 
 var MAC_REGEX = regexp.MustCompile("([0-9A-Fa-f]{2}[-:]){5}([0-9A-Fa-f]{2})")
 
-var TIMEOUT_ARP_REQUEST = 3 * time.Second
+var TIMEOUT_ARP_REQUEST = time.Second
 
 func ResolveTargetHwAddr(ifindex int, fd int, targetIp net.IP, srcIp net.IP) (net.HardwareAddr, error, error) {
 	// Try to detect targets MAC-Address with given IP-Address...
@@ -30,7 +31,7 @@ func ResolveTargetHwAddr(ifindex int, fd int, targetIp net.IP, srcIp net.IP) (ne
 		} else {
 			return mac, err1, nil
 		}
-	} else { 
+	} else {
 		return mac, nil, nil
 	}
 }
@@ -42,7 +43,7 @@ func scanARPFile(target net.IP) (net.HardwareAddr, error) {
 	if err != nil {
 		return nil, errors.New("Unable to read ARP-Cache")
 	}
-	
+
 	// --> Recieving data...
 	data := make([]byte, 10000)
 	_, err = file.Read(data)
@@ -95,7 +96,7 @@ func broadcastARPRequest(ifindex int, fd int, targetIp net.IP, srcIp net.IP) (ne
 		ProtAddressSize: 0x04,
 		Operation: 	0x01,
 		SourceHwAddress:	intrfc.HardwareAddr,
-		SourceProtAddress:	srcIp,	
+		SourceProtAddress:	srcIp,
 		DstHwAddress:	[]byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00,},
 		DstProtAddress:	targetIp,
 	}
@@ -117,9 +118,8 @@ func broadcastARPRequest(ifindex int, fd int, targetIp net.IP, srcIp net.IP) (ne
 
 	// --> Start listening for ARP-Responses...
 	responseChan := make(chan net.HardwareAddr)
-	stopChan := make(chan bool)
 
-	go listenForARPResponse(ifindex, intrfc.HardwareAddr, srcIp, targetIp, responseChan, stopChan)
+	go listenForARPResponse(ifindex, intrfc.HardwareAddr, srcIp, targetIp, responseChan)
 
 	// --> Prepare ARP-Request...
 	addr := &syscall.SockaddrLinklayer{
@@ -136,26 +136,23 @@ func broadcastARPRequest(ifindex int, fd int, targetIp net.IP, srcIp net.IP) (ne
 	}
 
 	// --> Waiting for ARP-Response...
-	go func(){
-		time.Sleep(TIMEOUT_ARP_REQUEST)
-		close(stopChan)
-		close(responseChan)
-	}()
 
-	for resp := range responseChan {
+	resp := <- responseChan
 		// --> Checking ARP-Response
 		dstMac := resp
 		if(dstMac != nil){
+			//log.Println("Also returned")
 			return dstMac, nil
 		} else {
+			//log.Println("Also returned")
 			return nil, nil
 		}
-	}
 
+	//log.Println("Also returned")
 	return nil, nil
 }
 
-func listenForARPResponse(ifindex int, srcMac []byte, srcIp []byte, dstIp []byte, responseChan chan net.HardwareAddr, stopChan chan bool) {
+func listenForARPResponse(ifindex int, srcMac []byte, srcIp []byte, dstIp []byte, responseChan chan net.HardwareAddr) {
 	// Packet Capture for ARP-Response...
 	intrfc, err := net.InterfaceByIndex(ifindex)
 	if err != nil {
@@ -173,35 +170,76 @@ func listenForARPResponse(ifindex int, srcMac []byte, srcIp []byte, dstIp []byte
 		responseChan <- net.HardwareAddr([]byte{
 					0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 				})
-		return 
+		return
 	}
 
 	defer handle.Close()
 
 	// --> Create Packet Source...
 	packetSrc := gopacket.NewPacketSource(handle, handle.LinkType())
-			
-	for {
-		select{
-		case <- stopChan:
-			return
-		case packet := <- packetSrc.Packets():
-			// --> Checking if Packet is Response...
-			arpLayer := packet.Layer(layers.LayerTypeARP)
-			if arpLayer != nil {
-				arp, _ := arpLayer.(*layers.ARP)
-				if (arp.Operation == uint16(0x02)) {
-					if (reflect.DeepEqual(arp.DstHwAddress, srcMac)) {
-						if (reflect.DeepEqual(arp.DstProtAddress, srcIp)) {
-							if (reflect.DeepEqual(arp.SourceProtAddress, dstIp)) {
-								responseChan <- net.HardwareAddr(arp.SourceHwAddress)
-								break
-							}
+
+	timeout := false
+	go func() {
+		time.Sleep(TIMEOUT_ARP_REQUEST)
+		timeout = true
+		//log.Println("Timeout reached")
+	}()
+
+	for !timeout{
+		packet := <- packetSrc.Packets()
+		// --> Checking if Packet is Response...
+		arpLayer := packet.Layer(layers.LayerTypeARP)
+		if arpLayer != nil {
+			arp, _ := arpLayer.(*layers.ARP)
+			if (arp.Operation == uint16(0x02)) {
+				if (reflect.DeepEqual(arp.DstHwAddress, srcMac)) {
+					if (reflect.DeepEqual(arp.DstProtAddress, srcIp)) {
+						if (reflect.DeepEqual(arp.SourceProtAddress, dstIp)) {
+							responseChan <- net.HardwareAddr(arp.SourceHwAddress)
+							// close(responseChan)
+							WriteToArp(dstIp, 0x1, 0x6, net.HardwareAddr(arp.SourceHwAddress), "*", intrfc)
+							//log.Println("Written to arp")
+							break
 						}
 					}
 				}
 			}
-
 		}
 	}
+	close(responseChan)
 }
+
+func WriteToArp(target net.IP, hwType int, flag int, hwAddr net.HardwareAddr, mask string, device *net.Interface) {
+	file, err := os.OpenInRoot("/proc/net", "arp")
+	if err != nil {
+		// Error handling
+	}
+
+	defer file.Close()
+
+	// --> Build string...
+	var sb strings.Builder
+
+	sb.WriteString(target.String())
+	sb.WriteString("\t")
+
+	str := strconv.Itoa(hwType)
+	sb.WriteString(str)
+	sb.WriteString("\t")
+
+	str = strconv.Itoa(flag)
+	sb.WriteString(str)
+	sb.WriteString("\t")
+
+	sb.WriteString(hwAddr.String())
+	sb.WriteString("\t")
+
+	sb.WriteString(mask)
+	sb.WriteString("\t")
+
+	sb.WriteString(device.Name)
+
+	file.WriteString(sb.String())
+}
+
+

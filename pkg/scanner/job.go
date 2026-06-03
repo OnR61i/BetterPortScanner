@@ -1,4 +1,4 @@
-package pkg/scanner
+package scanner
 
 import(
 	"net"

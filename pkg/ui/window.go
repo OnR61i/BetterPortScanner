@@ -1,4 +1,7 @@
-package pkg/ui
+package ui
+
+import "BetterPortScanner/pkg/scanner"
+import "log"
 
 type Window struct{
 
@@ -14,23 +17,24 @@ type Window struct{
 	workerCount int
 	timeOutInput int
 
-	progressPercent float
-	scanResults []Job
+	progressPercent float32
+	scanResults []scanner.Job
 	statusMessage string
 	isScanning bool
 }
 
-func NewWindow(configFile ConfigFile) Window{
-}
 
+func NewWindow() Window{
+	return Window{}
+}
+/*
 func Run(){
 }
 
 func Init(){
 }
 
-func Close(){
-}
+
 
 
 func processInput(){
@@ -50,15 +54,32 @@ func drawResultSection(input []Job) error{
 
 func drawProgressIndicator(float) error{
 }
+func (window *Window) IsOpen() {}
 
+*/
 
-func (window *Window) UpdateScanStatus(percent float, status string){
+func (window *Window) IsOpen() (bool){
+	return true
+}
+func (window *Window) Close(){
 }
 
-func (window *Window) RefreshResultList([]Job){
+func (window *Window) UpdateScanStatus(string, float32){		// Input: float32, string
 }
 
-func (window *Window) ShowError(error){
+func (window *Window) RefreshOutcomeList(outcomeArr []scanner.Job){	// Input: []Job
+	for _, outcome := range outcomeArr {
+		log.Println(outcome)
+	}
+}
+
+func (window *Window) RefreshLiveView(outcome scanner.Job){
+	log.Println("Prints live view")
+	log.Println(outcome)
+}	// Input: Job
+
+func (window *Window) ShowError(err error){	// Input: error
+	log.Println(err)
 }
 
 
